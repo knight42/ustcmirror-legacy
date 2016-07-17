@@ -1,0 +1,48 @@
+#! /bin/sh
+
+# $1: sync method
+# $2: repo name
+
+export BASEDIR=${BASEDIR:-/opt/ustcsync/}
+
+case "$1" in
+    rsync|git|lftp|ftp)
+        export ARCHIVE="$2"
+        export NAME="$1sync-$ARCHIVE"
+        export LOGDIR="$BASEDIR/log/$ARCHIVE"
+        export LOG="$LOGDIR/$NAME.log"
+        export LOGROTATE=${LOGROTATE:-20}
+        export MIRRORNAME=${MIRRORNAME:-$(hostname -f)}
+        [ -d "$LOGDIR" ] || mkdir -p "$LOGDIR"
+        ;;
+esac
+
+waitfor() {
+    prog="$1"
+    pid="$2"
+    trap 'pkill $prog; wait $pid' TERM INT HUP
+    wait "$pid"
+}
+
+case "$1" in
+    rsync)
+        rsyncsync "$2" &
+        waitfor "$1" $!
+        ;;
+    git)
+        gitsync "$2" &
+        waitfor "$1" $!
+        ;;
+    lftp)
+        lftpsync "$2" &
+        waitfor "$1" $!
+        ;;
+    ftp)
+        ftpsync "sync:archive:$2" &
+        waitfor "rsync" $!
+        ;;
+    *)
+        exec "$1" "$@"
+        ;;
+esac
+
