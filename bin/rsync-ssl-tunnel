@@ -1,0 +1,127 @@
+#! /bin/bash
+
+# Helper to tunnel rsync through ssl on the client side.
+# Example:
+#   $ RSYNC_SSL_METHOD=socat rsync -e ./rsync-ssl-tunnel syncproxy2.eu.debian.org::
+#   debian          Full Debian FTP Archive.
+#   debian-debug    Debug packages.
+
+# Copyright (c) 2016 Peter Palfrader
+#
+# Permission is hereby granted, free of charge, to any person
+# obtaining a copy of this software and associated documentation
+# files (the "Software"), to deal in the Software without
+# restriction, including without limitation the rights to use,
+# copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following
+# conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+# OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+# WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
+
+set -e
+set -u
+
+usage() {
+  echo "Usage: [RSYNC_SSL_CAPATH=<capath>] [RSYNC_SSL_PORT=<port>] [RSYNC_SSL_METHOD=stunnel4|stunnel4-old|socat] $0 <RSYNC_HOST>"
+}
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -l)
+      shift
+      shift
+      continue
+      ;;
+    --)
+      shift
+      continue
+      ;;
+    -*)
+      usage >&2
+      exit 1
+      ;;
+    *)
+      break
+  esac
+done
+
+if [[ "$#" = 0 ]]; then
+  usage >&2
+  echo >&2 "No arguments given."
+  exit 1
+fi
+RSYNC_HOST="$1"; shift
+RSYNC_SSL_PORT=${RSYNC_SSL_PORT:-"1873"}
+RSYNC_SSL_CAPATH=${RSYNC_SSL_CAPATH:-"/etc/ssl/certs"}
+RSYNC_SSL_METHOD=${RSYNC_SSL_METHOD:-"stunnel4"}
+
+method_stunnel() {
+  skip_host_check="$1"; shift
+
+  tmp="`tempfile`"
+  trap "rm -f '$tmp'" EXIT
+
+  (
+    cat << EOF
+# This file has been automatically created by ftpsync for syncing
+# from ${RSYNC_HOST}.
+#
+# To test if things works, try the following:
+#    rsync -e 'stunnel4 <this config file>' \$RSYNC_USER@dummy::
+#
+client = yes
+verify = 2
+CApath = ${RSYNC_SSL_CAPATH}
+
+syslog = no
+debug = 4
+output = /dev/stderr
+
+connect = ${RSYNC_HOST}:${RSYNC_SSL_PORT}
+EOF
+    if ! [ "$skip_host_check" = 1 ]; then
+      echo "checkHost = ${RSYNC_HOST}"
+    fi
+  ) > "$tmp"
+
+  exec stunnel4 "$tmp"
+  echo >&2 "Failed to exec stunnel4"
+  exit 1
+}
+
+method_socat() {
+  exec socat - "openssl-connect:${RSYNC_HOST}:${RSYNC_SSL_PORT},capath=${RSYNC_SSL_CAPATH}"
+  echo >&2 "Failed to exec socat."
+  exit 1
+}
+
+case ${RSYNC_SSL_METHOD:-} in
+  stunnel4)
+    method_stunnel 0
+    ;;
+  stunnel4-old)
+    method_stunnel 1
+    ;;
+  socat)
+    method_socat
+    ;;
+  *)
+    echo >&2 "Unknown method $RSYNC_SSL_METHOD."
+    exit 1
+    ;;
+esac
