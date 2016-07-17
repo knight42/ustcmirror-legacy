@@ -1,0 +1,54 @@
+#! /bin/sh
+
+set -e
+
+VERSION="20160716"
+
+if [ -f "$BASEDIR/etc/$NAME.conf" ]; then
+    . "$BASEDIR/etc/$NAME.conf"
+else
+    echo "Need conf file: $BASEDIR/etc/$NAME.conf"
+    exit 1
+fi
+
+## Common
+#BASEDIR=
+#ARCHIVE=
+#NAME=
+#LOGDIR=
+#LOG=
+#LOGROTATE=
+#MIRRORNAME=
+
+## Defined in conf
+#TO=
+#POST_EXEC
+
+LFTP=${LFTP:-lftp}
+BIND_ADDRESS="${BIND_ADDRESS:-202.141.176.110}"
+PARALLEL="$(grep -c '^processor' /proc/cpuinfo)"
+EXCLUDE="$EXCLUDE -X .~tmp~/ -X Archive-Update-in-Progress-$MIRRORNAME"
+LOCK="$TO/Archive-Update-in-Progress-$MIRRORNAME"
+
+touch "$LOCK"
+trap 'rm -f $LOCK 2> /dev/null; savelog -qc $LOGROTATE $LOG' EXIT
+
+set +e
+
+lftp -e "
+set xfer:log true
+set xfer:log-file $LOG
+set net:socket-bind-ipv4 $BIND_ADDRESS
+open $LFTPHOST
+mirror --verbose --skip-noaccess -aec --parallel=$PARALLEL $EXCLUDE $LFTPPATH $TO
+bye" >> "$LOG" 2>&1
+RET=$?
+
+# create a timestamp file on success
+[ "$RET" -eq 0 ] && date '+%F %T' > "$LOGDIR/.lastsuccess" || echo "lftp return: $RET" >> "$LOG"
+
+if [ -n "$POST_EXEC" ] && [ -x "$POST_EXEC" ]; then
+    $POST_EXEC $RET
+else
+    exit $RET
+fi
