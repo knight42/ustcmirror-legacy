@@ -1,0 +1,42 @@
+#! /bin/sh
+
+set -e
+
+TO="/srv/repo/$1"
+if [ ! -d "$TO" ]; then
+    echo "Not a directory: $TO" && exit 1
+fi
+
+## Common
+#BASEDIR=
+#ARCHIVE=
+#NAME=
+#LOGDIR=
+#LOG=
+#LOGROTATE=
+#MIRRORNAME=
+
+LOCK="$TO/Archive-Update-in-Progress-$MIRRORNAME"
+touch "$LOCK"
+trap 'rm -f $LOCK 2> /dev/null; savelog -qc 10 $LOG > /dev/null' EXIT
+
+set +e
+
+(
+    cd "$TO"
+    date '+===== gitsync started at %s %F %T ====='
+    git fetch origin master:master -v --progress
+    git update-server-info
+
+    echo "===== Do 'git gc' now... ====="
+    git gc
+) > "$LOG" 2>&1
+RET=$?
+
+[ $RET -eq 0 ] && date '+%F %T' > "$LOGDIR/.lastsuccess"
+
+if [ -n "$POST_EXEC" ] && [ -x "$POST_EXEC" ]; then
+    $POST_EXEC $RET
+else
+    exit $RET
+fi
