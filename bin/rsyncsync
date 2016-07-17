@@ -1,0 +1,62 @@
+#! /bin/sh
+
+## Author: Zhang Cheng <StephenPCG@gmail.com>
+## Collaborator: Zeng Jian <anonymousknight96 AT gmail.com>
+## If you have any problems using this script, please contact me.
+
+set -e
+
+VERSION="20160716"
+
+if [ -f "$BASEDIR/etc/$NAME.conf" ]; then
+    . "$BASEDIR/etc/$NAME.conf"
+else
+    echo "Need conf file: $BASEDIR/etc/$NAME.conf"
+    exit 1
+fi
+
+## Common
+#BASEDIR=
+#ARCHIVE=
+#NAME=
+#LOGDIR=
+#LOG=
+#LOGROTATE=
+#MIRRORNAME=
+
+## Defined in conf
+#RSYNC_USER=
+#RSYNC_HOST=
+#RSYNC_PATH=
+#RSYNC_PASSWORD=
+#TO=
+
+LOCK="$TO/Archive-Update-in-Progress-$MIRRORNAME"
+[ -n "$RSYNC_USER" ] && RSYNC_HOST="$RSYNC_USER@$RSYNC_HOST"
+export RSYNC_PASSWORD
+
+RSYNC=${RSYNC:-rsync}
+RSYNC_BW=${RSYNC_BW:-0}
+RSYNC_MAXDELETE=${RSYNC_MAXDELETE:-4000}
+BIND_ADDRESS=${BIND_ADDRESS:-202.141.176.110}
+RSYNC_OPTIONS=${RSYNC_OPTIONS:-"-4PrltvHSB8192 --timeout 14400 --delay-updates --safe-links --delete-delay --delete-excluded"}
+RSYNC_OPTIONS="$RSYNC_OPTIONS $EXTRA_OPTIONS"
+EXCLUDE="$EXCLUDE --exclude .~tmp~/ --exclude Archive-Update-in-Progress-$MIRRORNAME"
+
+touch "$LOCK"
+trap 'rm -f $LOCK 2> /dev/null; savelog -qc $LOGROTATE $LOG' EXIT
+
+set +e
+echo $RSYNC $EXCLUDE "--filter=protect_Archive-Update-in-Progress-$MIRRORNAME" --partial-dir=.rsync-partial  --bwlimit "$RSYNC_BW" --max-delete "$RSYNC_MAXDELETE" --address "$BIND_ADDRESS" $RSYNC_OPTIONS "${RSYNC_HOST}::${RSYNC_PATH}" "$TO"
+
+$RSYNC $EXCLUDE "--filter=protect_Archive-Update-in-Progress-$MIRRORNAME" --partial-dir=.rsync-partial  --bwlimit "$RSYNC_BW" --max-delete "$RSYNC_MAXDELETE" --address "$BIND_ADDRESS" $RSYNC_OPTIONS "${RSYNC_HOST}::${RSYNC_PATH}" "$TO" >> "$LOG" 2>&1
+RET=$?
+
+# create a timestamp file on success
+[ $RET -eq 0 ] && date '+%F %T' > "$LOGDIR/.lastsuccess"
+
+if [ -n "$POST_EXEC" ] && [ -x "$POST_EXEC" ]; then
+    $POST_EXEC $RET
+else
+    exit $RET
+fi
