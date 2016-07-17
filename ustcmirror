@@ -1,0 +1,212 @@
+#!/usr/bin/python -O
+# -*- coding: utf-8 -*-
+from __future__ import print_function, unicode_literals, with_statement, division
+
+import os
+import sys
+import pwd
+from os import path
+import logging
+import argparse
+import shlex
+import subprocess
+
+import config
+
+
+class CustomFormatter(argparse.HelpFormatter):
+
+    def _format_action_invocation(self, action):
+        if not action.option_strings:
+            metavar, = self._metavar_formatter(action, action.dest)(1)
+            return metavar
+        else:
+            # if the Optional doesn't take a value, format is:
+            #    -s, --long
+            if action.nargs == 0:
+                return ', '.join(action.option_strings)
+            # if the Optional takes a value, format is:
+            #    -s, --long ARGS
+            else:
+                default = action.dest.upper()
+                args_string = self._format_args(action, default)
+                option_string = ', '.join(action.option_strings)
+            return '{} {}'.format(option_string, args_string)
+
+    def _get_help_string(self, action):
+        help = action.help
+        if '%(default)' not in action.help and action.default is not None:
+            if action.default is not argparse.SUPPRESS:
+                defaulting_nargs = [argparse.OPTIONAL, argparse.ZERO_OR_MORE]
+                if action.option_strings or action.nargs in defaulting_nargs:
+                    help += ' (default: %(default)s)'
+        return help
+
+
+class UserNotFound(Exception):
+    pass
+
+
+def try_mkdir(d):
+    if not path.isdir(d):
+        if not path.exists(d):
+            os.makedirs(d)
+        else:
+            raise NotADirectoryError(d)
+
+
+class Manager(object):
+
+    def __init__(self, verbose=False):
+
+        verbose = True
+        if verbose:
+            level = logging.DEBUG
+        else:
+            level = logging.INFO
+        self._log = logging.getLogger(__name__)
+        self._log.setLevel(level)
+        ch = logging.StreamHandler()
+        fmter = logging.Formatter(
+            '[%(asctime)s] %(levelname)s: %(message)s')
+        ch.setFormatter(fmter)
+        self._log.addHandler(ch)
+
+        try:
+            self._uid = pwd.getpwnam(config.SYNC_USR).pw_uid
+        except KeyError:
+            raise UserNotFound(config.SYNC_USR)
+
+        self._extra = config.__dict__.get('EXTRA_DIR')
+
+    def add(self, method, name):
+
+        repo = path.join(config.REPO_DIR, name)
+        log = path.join(config.LOG_DIR, name)
+        try_mkdir(repo)
+        try_mkdir(log)
+
+    def sync(self, method, name):
+
+        repo = path.join(config.REPO_DIR, name)
+        if not path.isdir(repo):
+            raise NotADirectoryError(repo)
+        log = path.join(config.LOG_DIR, name)
+        # Otherwise may be created by root
+        try_mkdir(log)
+
+        if self._extra:
+            args = 'docker run -i --rm -v {conf}:/opt/ustcsync/etc:ro -v {extra}:/usr/local/bin -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid} --name syncing-{name} --net=host ustclug/mirror:latest {method} {name}'.format(
+                conf=config.CFG_DIR, extra=self._extra, repo=repo, log=log, bind_ip=config.BIND_ADDR, uid=self._uid, method=method, name=name)
+        else:
+            args = 'docker run -i --rm -v {conf}:/opt/ustcsync/etc:ro -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid} --name syncing-{name} --net=host ustclug/mirror:latest {method} {name}'.format(
+                conf=config.CFG_DIR, repo=repo, log=log, bind_ip=config.BIND_ADDR, uid=self._uid, method=method, name=name)
+
+        cmd = shlex.split(args)
+        self._log.debug('Command: %s', cmd)
+        retcode = subprocess.call(cmd)
+        self._log.debug('Return: %s', retcode)
+
+    def stop(self, name, timeout=60):
+
+        args = 'docker stop -t {timeout} syncing-{name}'.format(
+            timeout=timeout, name=name)
+        cmd = shlex.split(args)
+        self._log.debug('Command: %s', cmd)
+        retcode = subprocess.call(cmd)
+        self._log.debug('Return: %s', retcode)
+
+    def list(self):
+        for d in os.listdir(config.REPO_DIR):
+            print(d)
+
+    def remove(self, name):
+
+        cmd = shlex.split('docker rm -v syncing-{name}'.format(name=name))
+        self._log.debug('Command: %s', cmd)
+        retcode = subprocess.call(cmd)
+        self._log.debug('Return: %s', retcode)
+
+    def __enter__(self):
+
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+
+        return False
+
+
+def main():
+
+    parser = argparse.ArgumentParser(
+        description='ustcsync',
+        formatter_class=CustomFormatter)
+
+    parser.add_argument(
+        '-v',
+        '--verbose',
+        action='store_true',
+        default=False)
+
+    subparsers = parser.add_subparsers(
+        help='Available commands', dest='command')
+
+    add_pser = subparsers.add_parser('add',
+                                     formatter_class=CustomFormatter,
+                                     help='Add a new repository')
+    add_pser.add_argument(
+        '-m',
+        '--method',
+        default='rsync',
+        help='Sync method')
+
+    sync_pser = subparsers.add_parser('sync',
+                                      formatter_class=CustomFormatter,
+                                      help='Start container to sync')
+    sync_pser.add_argument(
+        '-m',
+        '--method',
+        default='rsync',
+        help='Sync method')
+    sync_pser.add_argument('name')
+
+    stop_pser = subparsers.add_parser('stop',
+                                      formatter_class=CustomFormatter,
+                                      help='Stop container')
+    stop_pser.add_argument(
+        '-t',
+        '--timeout',
+        default='60')
+    stop_pser.add_argument('name')
+
+    subparsers.add_parser('list',
+                          formatter_class=CustomFormatter,
+                          help='List repositories')
+
+    rm_pser = subparsers.add_parser('remove', help='Remove repository')
+    rm_pser.add_argument('name')
+
+    if len(sys.argv) > 1:
+        args = parser.parse_args()
+    else:
+        parser.print_help()
+        parser.exit(1)
+
+    args_dict = vars(args)
+    # print(args_dict)
+    get = args_dict.get
+
+    with Manager(get('verbose')) as manager:
+        if get('command') == 'add':
+            manager.add(get('name'))
+        elif get('command') == 'sync':
+            manager.sync(get('method'), get('name'))
+        elif get('command') == 'stop':
+            manager.stop(get('name'), get('timeout'))
+        elif get('command') == 'list':
+            manager.list()
+        elif get('command') == 'remove':
+            manager.remove(get('name'))
+
+if __name__ == '__main__':
+    main()
