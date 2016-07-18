@@ -94,6 +94,7 @@ class Manager(object):
     def add(self, method, name, interval):
 
         repo = path.join(REPO_DIR, name)
+        name = name.lower()
         log = path.join(LOG_DIR, name)
         try_mkdir(repo)
         try_mkdir(log)
@@ -117,6 +118,7 @@ class Manager(object):
         repo = path.join(REPO_DIR, name)
         if not path.isdir(repo):
             raise NotADirectoryError(repo)
+        name = name.lower()
         log = path.join(LOG_DIR, name)
         # Otherwise may be created by root
         try_mkdir(log)
@@ -153,10 +155,11 @@ class Manager(object):
 
     def list(self):
         for d in os.listdir(REPO_DIR):
+            name = d.lower()
             if not path.isdir(path.join(REPO_DIR, d)):
                 self._log.warn('Not a directory: %s', d)
-            elif self._methods.get(d):
-                print(self._methods.get(d), d)
+            elif self._methods.get(name):
+                print(self._methods.get(name), d)
             else:
                 print('unknown', d)
 
