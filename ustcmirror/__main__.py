@@ -107,7 +107,7 @@ class Manager(object):
             with os.fdopen(fd, 'wb') as tmp:
                 tmp.write(tab)
                 tmp.write('{} {} sync {name}\n'.format(interval, BIN_PATH, name=name).encode('utf-8'))
-            subprocess.check_call(['crontab', '-e', p])
+            subprocess.check_call(['crontab', p])
         except:
             traceback.print_exc()
         finally:
@@ -138,11 +138,7 @@ class Manager(object):
 
         cmd = shlex.split(args)
         self._log.debug('Command: %s', cmd)
-        retcode = subprocess.call(cmd)
-        self._log.debug('Return: %s', retcode)
-
-        if retcode == 0 and self._methods[name] != prog:
-            self._methods[name] = prog
+        subprocess.Popen(cmd)
 
     def stop(self, name, timeout=60):
 
@@ -151,7 +147,7 @@ class Manager(object):
         cmd = shlex.split(args)
         self._log.debug('Command: %s', cmd)
         retcode = subprocess.call(cmd)
-        self._log.debug('Return: %s', retcode)
+        self._log.debug('Docker return: %s', retcode)
 
     def list(self):
         for d in os.listdir(REPO_DIR):
@@ -178,7 +174,7 @@ class Manager(object):
                     s = l.strip()
                     if s.startswith('#') or not s.endswith(name):
                         tmp.write(l + '\n')
-            subprocess.check_call(['crontab', '-e', p])
+            subprocess.check_call(['crontab', p])
         except:
             traceback.print_exc()
         finally:
