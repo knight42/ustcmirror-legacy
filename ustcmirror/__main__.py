@@ -112,7 +112,7 @@ class Manager(object):
         finally:
             os.remove(p)
 
-    def sync(self, name, method=None):
+    def sync(self, name, prog=None):
 
         repo = path.join(REPO_DIR, name)
         if not path.isdir(repo):
@@ -121,26 +121,26 @@ class Manager(object):
         # Otherwise may be created by root
         try_mkdir(log)
 
-        if method is None:
+        if prog is None:
             m = self._methods.get(name)
             if not m:
                 raise MissingSyncMethod(name)
-            method = m
+            prog = m
 
         if self._extra:
             args = 'docker run -i --rm -v {conf}:/opt/ustcsync/etc:ro -v {extra}:/usr/local/bin -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid}:{gid} --name syncing-{name} --net=host ustclug/mirror:latest {method} {name}'.format(
-                conf=CFG_DIR, extra=self._extra, repo=repo, log=log, bind_ip=BIND_ADDR, uid=self._uid, gid=self._gid, method=method, name=name)
+                conf=CFG_DIR, extra=self._extra, repo=repo, log=log, bind_ip=BIND_ADDR, uid=self._uid, gid=self._gid, method=prog, name=name)
         else:
             args = 'docker run -i --rm -v {conf}:/opt/ustcsync/etc:ro -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid}:{gid} --name syncing-{name} --net=host ustclug/mirror:latest {method} {name}'.format(
-                conf=CFG_DIR, repo=repo, log=log, bind_ip=BIND_ADDR, uid=self._uid, gid=self._gid, method=method, name=name)
+                conf=CFG_DIR, repo=repo, log=log, bind_ip=BIND_ADDR, uid=self._uid, gid=self._gid, method=prog, name=name)
 
         cmd = shlex.split(args)
         self._log.debug('Command: %s', cmd)
         retcode = subprocess.call(cmd)
         self._log.debug('Return: %s', retcode)
 
-        if retcode == 0 and self._methods[name] != method:
-            self._methods[name] = method
+        if retcode == 0 and self._methods[name] != prog:
+            self._methods[name] = prog
 
     def stop(self, name, timeout=60):
 
@@ -155,8 +155,10 @@ class Manager(object):
         for d in os.listdir(REPO_DIR):
             if not path.isdir(path.join(REPO_DIR, d)):
                 self._log.warn('Not a directory: %s', d)
+            elif self._methods.get(d):
+                print(self._methods.get(d), d)
             else:
-                print(d)
+                print('unknown', d)
 
     def remove(self, name):
 
@@ -164,6 +166,20 @@ class Manager(object):
             shutil.rmtree(path.join(LOG_DIR, name))
         except:
             traceback.print_exc()
+
+        tab = subprocess.check_output(['crontab', '-l']).decode('utf-8').splitlines()
+        fd, p = tempfile.mkstemp()
+        try:
+            with os.fdopen(fd, 'w') as tmp:
+                for l in tab:
+                    s = l.strip()
+                    if s.startswith('#') or not s.endswith(name):
+                        tmp.write(l + '\n')
+            subprocess.check_call(['crontab', '-e', p])
+        except:
+            traceback.print_exc()
+        finally:
+            os.remove(p)
 
     def __enter__(self):
 
@@ -238,7 +254,6 @@ def main():
         parser.exit(1)
 
     args_dict = vars(args)
-    # print(args_dict)
     get = args_dict.get
 
     with Manager(get('verbose')) as manager:
