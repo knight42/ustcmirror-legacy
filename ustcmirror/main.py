@@ -13,7 +13,7 @@ import shutil
 import traceback
 import subprocess
 
-import config
+from .config import SYNC_USR, REPO_DIR, LOG_DIR, CFG_DIR, BIND_ADDR, EXTRA_DIR
 
 class CustomFormatter(argparse.HelpFormatter):
 
@@ -74,36 +74,36 @@ class Manager(object):
         self._log.addHandler(ch)
 
         try:
-            self._uid = pwd.getpwnam(config.SYNC_USR).pw_uid
+            self._uid = pwd.getpwnam(SYNC_USR).pw_uid
         except KeyError:
-            raise UserNotFound(config.SYNC_USR)
+            raise UserNotFound(SYNC_USR)
 
-        self._extra = config.__dict__.get('EXTRA_DIR')
+        self._extra = EXTRA_DIR
         if self._extra and not path.isdir(self._extra):
             raise NotADirectoryError(self._extra)
 
     def add(self, method, name):
 
-        repo = path.join(config.REPO_DIR, name)
-        log = path.join(config.LOG_DIR, name)
+        repo = path.join(REPO_DIR, name)
+        log = path.join(LOG_DIR, name)
         try_mkdir(repo)
         try_mkdir(log)
 
     def sync(self, method, name):
 
-        repo = path.join(config.REPO_DIR, name)
+        repo = path.join(REPO_DIR, name)
         if not path.isdir(repo):
             raise NotADirectoryError(repo)
-        log = path.join(config.LOG_DIR, name)
+        log = path.join(LOG_DIR, name)
         # Otherwise may be created by root
         try_mkdir(log)
 
         if self._extra:
             args = 'docker run -i --rm -v {conf}:/opt/ustcsync/etc:ro -v {extra}:/usr/local/bin -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid} --name syncing-{name} --net=host ustclug/mirror:latest {method} {name}'.format(
-                conf=config.CFG_DIR, extra=self._extra, repo=repo, log=log, bind_ip=config.BIND_ADDR, uid=self._uid, method=method, name=name)
+                conf=CFG_DIR, extra=self._extra, repo=repo, log=log, bind_ip=BIND_ADDR, uid=self._uid, method=method, name=name)
         else:
             args = 'docker run -i --rm -v {conf}:/opt/ustcsync/etc:ro -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid} --name syncing-{name} --net=host ustclug/mirror:latest {method} {name}'.format(
-                conf=config.CFG_DIR, repo=repo, log=log, bind_ip=config.BIND_ADDR, uid=self._uid, method=method, name=name)
+                conf=CFG_DIR, repo=repo, log=log, bind_ip=BIND_ADDR, uid=self._uid, method=method, name=name)
 
         cmd = shlex.split(args)
         self._log.debug('Command: %s', cmd)
@@ -120,8 +120,8 @@ class Manager(object):
         self._log.debug('Return: %s', retcode)
 
     def list(self):
-        for d in os.listdir(config.REPO_DIR):
-            if not path.isdir(path.join(config.REPO_DIR, d)):
+        for d in os.listdir(REPO_DIR):
+            if not path.isdir(path.join(REPO_DIR, d)):
                 self._log.warn('Not a directory: %s', d)
             else:
                 print(d)
@@ -132,9 +132,9 @@ class Manager(object):
         self._log.debug('Command: %s', cmd)
         retcode = subprocess.call(cmd)
         try:
-            shutil.rmtree(path.join(config.REPO_DIR, name))
+            shutil.rmtree(path.join(REPO_DIR, name))
         except:
-            traceback.print_last()
+            traceback.print_exc()
         self._log.debug('Return: %s', retcode)
 
     def __enter__(self):
