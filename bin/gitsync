@@ -23,6 +23,7 @@ trap 'rm -f $LOCK 2> /dev/null; savelog -qc 10 $LOG > /dev/null' EXIT
 set +e
 
 (
+    ## Need `git clone --bare <remote>` first
     cd "$TO"
     date '+===== gitsync started at %s %F %T ====='
     git fetch origin master:master -v --progress

@@ -9,10 +9,11 @@ from os import path
 import logging
 import argparse
 import shlex
+import shutil
+import traceback
 import subprocess
 
 import config
-
 
 class CustomFormatter(argparse.HelpFormatter):
 
@@ -78,6 +79,8 @@ class Manager(object):
             raise UserNotFound(config.SYNC_USR)
 
         self._extra = config.__dict__.get('EXTRA_DIR')
+        if self._extra and not path.isdir(self._extra):
+            raise NotADirectoryError(self._extra)
 
     def add(self, method, name):
 
@@ -118,13 +121,20 @@ class Manager(object):
 
     def list(self):
         for d in os.listdir(config.REPO_DIR):
-            print(d)
+            if not path.isdir(path.join(config.REPO_DIR, d)):
+                self._log.warn('Not a directory: %s', d)
+            else:
+                print(d)
 
     def remove(self, name):
 
         cmd = shlex.split('docker rm -v syncing-{name}'.format(name=name))
         self._log.debug('Command: %s', cmd)
         retcode = subprocess.call(cmd)
+        try:
+            shutil.rmtree(path.join(config.REPO_DIR, name))
+        except:
+            traceback.print_last()
         self._log.debug('Return: %s', retcode)
 
     def __enter__(self):
