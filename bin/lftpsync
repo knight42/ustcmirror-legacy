@@ -44,8 +44,13 @@ mirror --verbose --skip-noaccess -aec --parallel=$PARALLEL $EXCLUDE $LFTPPATH $T
 bye" >> "$LOG" 2>&1
 RET=$?
 
-# create a timestamp file on success
-[ "$RET" -eq 0 ] && date '+%F %T' > "$LOGDIR/.lastsuccess" || echo "lftp return: $RET" >> "$LOG"
+if [ $RET -eq 0 ]; then
+    date '+%F %T' > "$LOGDIR/.lastsuccess"
+    rm -f "$LOGDIR/.lastfail"
+else
+    echo "lftp return: $RET" >> "$LOG"
+    date '+%F %T' > "$LOGDIR/.lastfail"
+fi
 
 if [ -n "$POST_EXEC" ] && [ -x "$POST_EXEC" ]; then
     $POST_EXEC $RET

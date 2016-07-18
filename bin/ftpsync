@@ -627,15 +627,6 @@ else
     RSYNCPTH="${RSYNC_USER}@${RSYNC_HOST}"
 fi
 
-function sync_ssd_cache () {
-if [ -n "${HTTP_DIRNAME}" ]; then
-    for dir in ${HTTP_DIRNAME}; do
-        echo "===== Syncing SSD cache $dir ====="
-        sudo -u www-data /home/mirror/scripts/ssd-cache/update-cache.sh ${dir}
-    done
-fi
-}
-
 # Now do the actual mirroring, and run as long as we have an updaterequired file.
 export RSYNC_PASSWORD
 export RSYNC_PROXY
@@ -746,15 +737,6 @@ while [[ -e ${UPDATEREQUIRED} ]]; do
         result=0
     fi # Sync stage 2?
 
-    # USTCLUG: refresh SSD cache
-    if [ ${result} -eq 0 ]; then
-        set +e
-        set +E
-        (sync_ssd_cache; exit 0)
-        set -E
-        set -e
-    fi
-
     set +e
     check_rsync $result "Sync step 2 went wrong, got errorcode ${result}. Logfile: ${LOG}"
     GO=$?
@@ -767,6 +749,9 @@ while [[ -e ${UPDATEREQUIRED} ]]; do
     # USTCLUG: create timestamp file after success step 2
     if [ ${GO} -eq 0 ]; then
         date '+%F %T' > "$LOGDIR/.lastsuccess"
+        rm -f "$LOGDIR/.lastfail"
+    else
+        date '+%F %T' > "$LOGDIR/.lastfail"
     fi
     HOOK=(
         HOOKNR=3

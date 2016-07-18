@@ -34,7 +34,12 @@ set +e
 ) > "$LOG" 2>&1
 RET=$?
 
-[ $RET -eq 0 ] && date '+%F %T' > "$LOGDIR/.lastsuccess"
+if [ $RET -eq 0 ]; then
+    date '+%F %T' > "$LOGDIR/.lastsuccess"
+    rm -f "$LOGDIR/.lastfail"
+else
+    date '+%F %T' > "$LOGDIR/.lastfail"
+fi
 
 if [ -n "$POST_EXEC" ] && [ -x "$POST_EXEC" ]; then
     $POST_EXEC $RET
