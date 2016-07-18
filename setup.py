@@ -43,7 +43,7 @@ setup(
     zip_safe=False,
     entry_points={
         'console_scripts':[
-            'ustcmirror = ustcmirror.main:main'
+            'ustcmirror = ustcmirror.__main__:main'
         ]
     }
 )

@@ -7,10 +7,14 @@ export BASEDIR=${BASEDIR:-/opt/ustcsync/}
 
 case "$1" in
     rsync|git|lftp|ftp)
+        ## NAME and ARCHIVE will be override by `ftpsync`
         export ARCHIVE="$2"
         export NAME="$1sync-$ARCHIVE"
+
+        ## LOGDIR and LOG should be override in conf
         export LOGDIR="$BASEDIR/log/$ARCHIVE"
         export LOG="$LOGDIR/$NAME.log"
+
         export LOGROTATE=${LOGROTATE:-20}
         export MIRRORNAME=${MIRRORNAME:-$(hostname -f)}
         [ -d "$LOGDIR" ] || mkdir -p "$LOGDIR"

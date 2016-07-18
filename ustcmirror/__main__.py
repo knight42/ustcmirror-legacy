@@ -5,15 +5,17 @@ from __future__ import print_function, unicode_literals, with_statement, divisio
 import os
 import sys
 import pwd
+import json
 from os import path
 import logging
 import argparse
 import shlex
 import shutil
+import tempfile
 import traceback
 import subprocess
 
-from .config import SYNC_USR, REPO_DIR, LOG_DIR, CFG_DIR, BIND_ADDR, EXTRA_DIR
+from .config import BIN_PATH, SYNC_USR, REPO_DIR, LOG_DIR, CFG_DIR, BIND_ADDR, EXTRA_DIR, RECORD_FILE, SYNC_METHODS
 
 class CustomFormatter(argparse.HelpFormatter):
 
@@ -47,6 +49,9 @@ class CustomFormatter(argparse.HelpFormatter):
 class UserNotFound(Exception):
     pass
 
+class MissingSyncMethod(Exception):
+    pass
+
 
 def try_mkdir(d):
     if not path.isdir(d):
@@ -60,7 +65,6 @@ class Manager(object):
 
     def __init__(self, verbose=False):
 
-        verbose = True
         if verbose:
             level = logging.DEBUG
         else:
@@ -74,22 +78,41 @@ class Manager(object):
         self._log.addHandler(ch)
 
         try:
-            self._uid = pwd.getpwnam(SYNC_USR).pw_uid
+            pw = pwd.getpwnam(SYNC_USR)
         except KeyError:
             raise UserNotFound(SYNC_USR)
+        self._uid = pw.pw_uid
+        self._gid = pw.pw_gid
 
         self._extra = EXTRA_DIR
         if self._extra and not path.isdir(self._extra):
             raise NotADirectoryError(self._extra)
 
-    def add(self, method, name):
+        self._record = RECORD_FILE
+        self._methods = SYNC_METHODS
+
+    def add(self, method, name, interval):
 
         repo = path.join(REPO_DIR, name)
         log = path.join(LOG_DIR, name)
         try_mkdir(repo)
         try_mkdir(log)
 
-    def sync(self, method, name):
+        self._methods[name] = method
+
+        tab = subprocess.check_output(['crontab', '-l'])
+        fd, p = tempfile.mkstemp()
+        try:
+            with os.fdopen(fd, 'wb') as tmp:
+                tmp.write(tab)
+                tmp.write('{} {} sync {name}\n'.format(interval, BIN_PATH, name=name).encode('utf-8'))
+            subprocess.check_call(['crontab', '-e', p])
+        except:
+            traceback.print_exc()
+        finally:
+            os.remove(p)
+
+    def sync(self, name, method=None):
 
         repo = path.join(REPO_DIR, name)
         if not path.isdir(repo):
@@ -98,17 +121,26 @@ class Manager(object):
         # Otherwise may be created by root
         try_mkdir(log)
 
+        if method is None:
+            m = self._methods.get(name)
+            if not m:
+                raise MissingSyncMethod(name)
+            method = m
+
         if self._extra:
-            args = 'docker run -i --rm -v {conf}:/opt/ustcsync/etc:ro -v {extra}:/usr/local/bin -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid} --name syncing-{name} --net=host ustclug/mirror:latest {method} {name}'.format(
-                conf=CFG_DIR, extra=self._extra, repo=repo, log=log, bind_ip=BIND_ADDR, uid=self._uid, method=method, name=name)
+            args = 'docker run -i --rm -v {conf}:/opt/ustcsync/etc:ro -v {extra}:/usr/local/bin -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid}:{gid} --name syncing-{name} --net=host ustclug/mirror:latest {method} {name}'.format(
+                conf=CFG_DIR, extra=self._extra, repo=repo, log=log, bind_ip=BIND_ADDR, uid=self._uid, gid=self._gid, method=method, name=name)
         else:
-            args = 'docker run -i --rm -v {conf}:/opt/ustcsync/etc:ro -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid} --name syncing-{name} --net=host ustclug/mirror:latest {method} {name}'.format(
-                conf=CFG_DIR, repo=repo, log=log, bind_ip=BIND_ADDR, uid=self._uid, method=method, name=name)
+            args = 'docker run -i --rm -v {conf}:/opt/ustcsync/etc:ro -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid}:{gid} --name syncing-{name} --net=host ustclug/mirror:latest {method} {name}'.format(
+                conf=CFG_DIR, repo=repo, log=log, bind_ip=BIND_ADDR, uid=self._uid, gid=self._gid, method=method, name=name)
 
         cmd = shlex.split(args)
         self._log.debug('Command: %s', cmd)
         retcode = subprocess.call(cmd)
         self._log.debug('Return: %s', retcode)
+
+        if retcode == 0 and self._methods[name] != method:
+            self._methods[name] = method
 
     def stop(self, name, timeout=60):
 
@@ -128,14 +160,10 @@ class Manager(object):
 
     def remove(self, name):
 
-        cmd = shlex.split('docker rm -v syncing-{name}'.format(name=name))
-        self._log.debug('Command: %s', cmd)
-        retcode = subprocess.call(cmd)
         try:
-            shutil.rmtree(path.join(REPO_DIR, name))
+            shutil.rmtree(path.join(LOG_DIR, name))
         except:
             traceback.print_exc()
-        self._log.debug('Return: %s', retcode)
 
     def __enter__(self):
 
@@ -143,13 +171,15 @@ class Manager(object):
 
     def __exit__(self, exc_type, exc_value, traceback):
 
+        with open(RECORD_FILE, 'w') as fout:
+            json.dump(self._methods, fout, indent=4)
         return False
 
 
 def main():
 
     parser = argparse.ArgumentParser(
-        description='ustcsync',
+        prog='ustcmirror',
         formatter_class=CustomFormatter)
 
     parser.add_argument(
@@ -169,6 +199,12 @@ def main():
         '--method',
         default='rsync',
         help='Sync method')
+    add_pser.add_argument(
+        '-i',
+        '--interval',
+        default='@hourly',
+        help='Sync interval')
+    add_pser.add_argument('name')
 
     sync_pser = subparsers.add_parser('sync',
                                       formatter_class=CustomFormatter,
@@ -176,7 +212,6 @@ def main():
     sync_pser.add_argument(
         '-m',
         '--method',
-        default='rsync',
         help='Sync method')
     sync_pser.add_argument('name')
 
@@ -208,9 +243,9 @@ def main():
 
     with Manager(get('verbose')) as manager:
         if get('command') == 'add':
-            manager.add(get('name'))
+            manager.add(get('method'), get('name'), get('interval'))
         elif get('command') == 'sync':
-            manager.sync(get('method'), get('name'))
+            manager.sync(get('name'), get('method'))
         elif get('command') == 'stop':
             manager.stop(get('name'), get('timeout'))
         elif get('command') == 'list':
