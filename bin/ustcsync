@@ -1,25 +1,7 @@
-#! /bin/sh
+#! /bin/bash
 
-# $1: sync method
-# $2: repo name
-
-export BASEDIR=${BASEDIR:-/opt/ustcsync/}
-
-case "$1" in
-    rsync|git|lftp|ftp)
-        ## NAME and ARCHIVE will be override by `ftpsync`
-        export ARCHIVE="$2"
-        export NAME="$1sync-$ARCHIVE"
-
-        ## LOGDIR and LOG should be override in conf
-        export LOGDIR="$BASEDIR/log/$ARCHIVE"
-        export LOG="$LOGDIR/$NAME.log"
-
-        export LOGROTATE=${LOGROTATE:-20}
-        export MIRRORNAME=${MIRRORNAME:-$(hostname -f)}
-        [ -d "$LOGDIR" ] || mkdir -p "$LOGDIR"
-        ;;
-esac
+## $1: rsync|git|lftp|ftp
+## $2: repo name
 
 waitfor() {
     prog="$1"
@@ -28,17 +10,23 @@ waitfor() {
     wait "$pid"
 }
 
+export BASEDIR=${BASEDIR:-/opt/ustcsync/}
+
+## NAME and ARCHIVE will be override by `ftpsync`
+export ARCHIVE="${2,,}" # tolower
+export NAME="${1,,}sync-$ARCHIVE"
+
+## LOGDIR and LOG should be override in conf
+export LOGDIR="$BASEDIR/log/$ARCHIVE"
+[ -d "$LOGDIR" ] || mkdir -p "$LOGDIR"
+export LOG="$LOGDIR/$NAME.log"
+
+export LOGROTATE=${LOGROTATE:-20}
+export MIRRORNAME=${MIRRORNAME:-$(hostname -f)}
+
 case "$1" in
-    rsync)
-        rsyncsync "$2" &
-        waitfor "$1" $!
-        ;;
-    git)
-        gitsync "$2" &
-        waitfor "$1" $!
-        ;;
-    lftp)
-        lftpsync "$2" &
+    rsync|git|lftp)
+        "$1"sync "$2" &
         waitfor "$1" $!
         ;;
     ftp)
@@ -46,7 +34,7 @@ case "$1" in
         waitfor "rsync" $!
         ;;
     *)
-        exec "$1" "$@"
+        echo >&2 "Error: Unknown to me: $1 $2"
         ;;
 esac
 
