@@ -1,6 +1,6 @@
-#! /bin/sh
+#! /bin/bash
 
-set -e
+exec > >(tee -a "$LOG") 2>&1
 
 TO="/srv/repo/$1"
 if [ ! -d "$TO" ]; then
@@ -20,18 +20,16 @@ LOCK="$TO/Archive-Update-in-Progress-$MIRRORNAME"
 touch "$LOCK"
 trap 'rm -f $LOCK 2> /dev/null; savelog -qc 10 $LOG > /dev/null' EXIT
 
-set +e
-
 (
     ## Need `git clone --bare <remote>` first
-    cd "$TO"
+    cd "$TO" || exit 1
     date '+===== gitsync started at %s %F %T ====='
     git fetch origin master:master -v --progress
     git update-server-info
 
     echo "===== Do 'git gc' now... ====="
     git gc
-) > "$LOG" 2>&1
+)
 RET=$?
 
 if [ $RET -eq 0 ]; then

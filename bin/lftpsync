@@ -1,8 +1,6 @@
-#! /bin/sh
+#! /bin/bash
 
-set -e
-
-VERSION="20160716"
+exec > >(tee -a "$LOG") 2>&1
 
 if [ -f "$BASEDIR/etc/$NAME.conf" ]; then
     . "$BASEDIR/etc/$NAME.conf"
@@ -25,7 +23,7 @@ fi
 #POST_EXEC
 
 LFTP=${LFTP:-lftp}
-BIND_ADDRESS="${BIND_ADDRESS:-202.141.176.110}"
+#BIND_ADDRESS=
 PARALLEL="$(grep -c '^processor' /proc/cpuinfo)"
 EXCLUDE="$EXCLUDE -X .~tmp~/ -X Archive-Update-in-Progress-$MIRRORNAME"
 LOCK="$TO/Archive-Update-in-Progress-$MIRRORNAME"
@@ -33,15 +31,11 @@ LOCK="$TO/Archive-Update-in-Progress-$MIRRORNAME"
 touch "$LOCK"
 trap 'rm -f $LOCK 2> /dev/null; savelog -qc $LOGROTATE $LOG' EXIT
 
-set +e
-
 lftp -e "
-set xfer:log true
-set xfer:log-file $LOG
 set net:socket-bind-ipv4 $BIND_ADDRESS
 open $LFTPHOST
 mirror --verbose --skip-noaccess -aec --parallel=$PARALLEL $EXCLUDE $LFTPPATH $TO
-bye" >> "$LOG" 2>&1
+bye"
 RET=$?
 
 if [ $RET -eq 0 ]; then
