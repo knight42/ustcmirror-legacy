@@ -5,4 +5,3 @@ ENTRYPOINT ["ustcsync"]
 RUN apk update &&  apk add --update bash git lftp rsync && rm -rf /var/cache
 COPY etc /opt/ustcsync/etc/
 COPY bin /opt/ustcsync/bin/
-VOLUME /usr/local/bin
