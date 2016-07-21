@@ -1,44 +1,55 @@
 #!/usr/bin/python -O
 # -*- coding: utf-8 -*-
-__all__ = ['BIN_PATH', 'REPO_DIR', 'LOG_DIR', 'CFG_DIR', 'EXTRA_DIR', 'SYNC_USR', 'BIND_ADDR', 'RECORD_FILE', 'SYNC_METHODS']
+from __future__ import print_function, unicode_literals
 
-REPO_DIR = '/srv/repo/'
-LOG_DIR = '/opt/ustcsync/log/'
-CFG_DIR = '/opt/ustcsync/etc/'
-BIN_PATH = '/usr/local/bin/ustcmirror'
-
-## Optional
-EXTRA_DIR = ''
-
-## The user who ran `ustcmirror`
-SYNC_USR = 'mirror'
-
-## Only affect rsync/lftp/ftpsync
-BIND_ADDR = '202.141.176.110'
-
-def _update_cfg(obj, *args):
-    g = globals()
-    cfg = {k: v for k, v in obj.items() if v}
-    g.update(cfg)
+__all__ = ['load_user_config']
 
 import os
 from os import path
+import socket
+import fcntl
+import struct
 import json
-_user_cfg_dir = path.join(path.expanduser('~'), '.config', 'ustcmirror')
-if not path.isdir(_user_cfg_dir):
-    os.makedirs(_user_cfg_dir)
-_user_cfg_path = path.join(_user_cfg_dir, 'config.json')
-if path.isfile(_user_cfg_path):
-    with open(_user_cfg_path, 'r') as cfg:
-        _update_cfg(json.load(cfg), 'BIN_PATH', 'REPO_DIR', 'LOG_DIR', 'CFG_DIR', 'EXTRA_DIR', 'SYNC_USR', 'BIND_ADDR')
 
-RECORD_FILE = path.join(_user_cfg_dir, 'sync_methods.json')
-SYNC_METHODS = {}
 
-if path.isfile(RECORD_FILE):
-    with open(RECORD_FILE, 'r') as fin:
-        SYNC_METHODS = json.load(fin)
-else:
-    ## Touch
-    with open(RECORD_FILE, 'w') as fout:
-        json.dump(SYNC_METHODS, fout)
+user_cfg_dir = path.join(path.expanduser('~'), '.ustcmirror')
+if not path.isdir(user_cfg_dir):
+    os.makedirs(user_cfg_dir)
+user_cfg_path = path.join(user_cfg_dir, 'config.json')
+
+def _get_ip(iface):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # 0x8915: SIOCGIFADDR
+    return socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, struct.pack(
+        '256s', iface[:15].encode('utf-8')))[20:24])
+
+def load_user_config():
+    cfg = {
+        'REPO_DIR': '/srv/repo/',
+        'LOG_DIR': '/opt/ustcsync/log/',
+        'ETC_DIR': '/opt/ustcsync/etc/',
+        'BIN_PATH': '/usr/local/bin/ustcmirror',
+        'DB_PATH': path.join(user_cfg_dir, 'repos.db'),
+        # The user who ran `ustcmirror`
+        'SYNC_USR': 'mirror',
+        # Only affect rsync/lftp/ftpsync
+        'BIND_ADDR': '202.141.176.110',
+    }
+
+    if path.isfile(user_cfg_path):
+        with open(user_cfg_path, 'r') as fin:
+            user_cfg = json.load(fin)
+            for k in cfg.keys():
+                if user_cfg.get(k):
+                    cfg[k] = user_cfg.get(k)
+        try:
+            socket.inet_aton(cfg['BIND_ADDR'])
+        except socket.error:
+            # Possibly interface name
+            cfg['BIND_ADDR'] = _get_ip(cfg['BIND_ADDR'])
+
+    return cfg
+
+if __name__ == '__main__':
+    import pprint
+    pprint.pprint(load_user_config())

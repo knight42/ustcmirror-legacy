@@ -1,11 +1,11 @@
 #!/usr/bin/python -O
 # -*- coding: utf-8 -*-
-from __future__ import print_function, unicode_literals, with_statement, division
+from __future__ import print_function, unicode_literals, with_statement
 
 import os
 import sys
 import pwd
-import json
+import sqlite3
 from os import path
 import logging
 import argparse
@@ -15,7 +15,17 @@ import tempfile
 import traceback
 import subprocess
 
-from .config import BIN_PATH, SYNC_USR, REPO_DIR, LOG_DIR, CFG_DIR, BIND_ADDR, EXTRA_DIR, RECORD_FILE, SYNC_METHODS
+from .config import load_user_config
+_USER_CFG = load_user_config()
+BIN_PATH = _USER_CFG['BIN_PATH']
+SYNC_USR = _USER_CFG['SYNC_USR']
+REPO_DIR = _USER_CFG['REPO_DIR']
+LOG_DIR = _USER_CFG['LOG_DIR']
+ETC_DIR = _USER_CFG['ETC_DIR']
+BIND_ADDR = _USER_CFG['BIND_ADDR']
+DB_PATH = _USER_CFG['DB_PATH']
+
+from .utils import DbDict
 
 class CustomFormatter(argparse.HelpFormatter):
 
@@ -45,6 +55,9 @@ class CustomFormatter(argparse.HelpFormatter):
                     help += ' (default: %(default)s)'
         return help
 
+if not hasattr(__builtins__, 'NotADirectoryError'):
+    class NotADirectoryError(Exception):
+        pass
 
 class UserNotFound(Exception):
     pass
@@ -78,28 +91,20 @@ class Manager(object):
         self._log.addHandler(ch)
 
         try:
-            pw = pwd.getpwnam(SYNC_USR)
+            self._pw = pwd.getpwnam(SYNC_USR)
         except KeyError:
             raise UserNotFound(SYNC_USR)
-        self._uid = pw.pw_uid
-        self._gid = pw.pw_gid
 
-        self._extra = EXTRA_DIR
-        if self._extra and not path.isdir(self._extra):
-            raise NotADirectoryError(self._extra)
+        self._db = DbDict(self._init_db(DB_PATH))
 
-        self._record = RECORD_FILE
-        self._methods = SYNC_METHODS
-
-    def add(self, method, name, interval):
+    def add(self, name, prog, args, interval):
 
         repo = path.join(REPO_DIR, name)
-        name = name.lower()
-        log = path.join(LOG_DIR, name)
+        log = path.join(LOG_DIR, name.lower())
         try_mkdir(repo)
         try_mkdir(log)
 
-        self._methods[name] = method
+        self._db[name] = (prog, args)
 
         tab = subprocess.check_output(['crontab', '-l'])
         fd, p = tempfile.mkstemp()
@@ -109,36 +114,32 @@ class Manager(object):
                 tmp.write('{} {} sync {name}\n'.format(interval, BIN_PATH, name=name).encode('utf-8'))
             subprocess.check_call(['crontab', p])
         except:
+            self._log.warn('Error occurred:')
             traceback.print_exc()
         finally:
             os.remove(p)
 
-    def sync(self, name, prog=None):
+    def sync(self, name):
 
         repo = path.join(REPO_DIR, name)
         if not path.isdir(repo):
             raise NotADirectoryError(repo)
-        name = name.lower()
-        log = path.join(LOG_DIR, name)
+        log = path.join(LOG_DIR, name.lower())
         # Otherwise may be created by root
         try_mkdir(log)
 
-        if prog is None:
-            m = self._methods.get(name)
-            if not m:
-                raise MissingSyncMethod(name)
-            prog = m
+        prog, args = self._db[name]
 
-        if self._extra:
-            args = 'docker run -i --rm -v {conf}:/opt/ustcsync/etc:ro -v {extra}:/usr/local/bin -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid}:{gid} --name syncing-{name} --net=host ustclug/mirror:latest {method} {name}'.format(
-                conf=CFG_DIR, extra=self._extra, repo=repo, log=log, bind_ip=BIND_ADDR, uid=self._uid, gid=self._gid, method=prog, name=name)
+        if prog == 'ustcsync':
+            uid = self._pw.pw_uid
+            gid = self._pw.pw_gid
+            ct = 'docker run --rm -v {conf}:/opt/ustcsync/etc:ro -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid}:{gid} --name syncing-{name} --net=host ustclug/mirror:latest {args}'.format(
+                    name=name, conf=ETC_DIR, repo=repo, log=log, bind_ip=BIND_ADDR, uid=uid, gid=gid, args=args)
+            cmd = shlex.split(ct)
+            self._log.debug('Command: %s', cmd)
         else:
-            args = 'docker run -i --rm -v {conf}:/opt/ustcsync/etc:ro -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid}:{gid} --name syncing-{name} --net=host ustclug/mirror:latest {method} {name}'.format(
-                conf=CFG_DIR, repo=repo, log=log, bind_ip=BIND_ADDR, uid=self._uid, gid=self._gid, method=prog, name=name)
-
-        cmd = shlex.split(args)
-        self._log.debug('Command: %s', cmd)
-        subprocess.Popen(cmd)
+            cmd = shlex.split('{} {}'.format(prog, args))
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def stop(self, name, timeout=60):
 
@@ -150,14 +151,10 @@ class Manager(object):
         self._log.debug('Docker return: %s', retcode)
 
     def list(self):
-        for d in os.listdir(REPO_DIR):
-            name = d.lower()
-            if not path.isdir(path.join(REPO_DIR, d)):
-                self._log.warn('Not a directory: %s', d)
-            elif self._methods.get(name):
-                print(self._methods.get(name), d)
-            else:
-                print('unknown', d)
+
+        for item in self._db:
+            name, prog, args = item
+            print(name, prog)
 
     def remove(self, name):
 
@@ -180,14 +177,25 @@ class Manager(object):
         finally:
             os.remove(p)
 
+    def _init_db(self, f):
+
+        conn = sqlite3.connect(f)
+        cursor = conn.cursor()
+        cursor.execute("""CREATE TABLE IF NOT EXISTS repositories (
+                          name TEXT primary key,
+                          program TEXT,
+                          args TEXT);""")
+        cursor.execute("""CREATE UNIQUE INDEX IF NOT EXISTS uniq_repo on repositories(name);""")
+        conn.commit()
+        return conn
+
     def __enter__(self):
 
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
 
-        with open(RECORD_FILE, 'w') as fout:
-            json.dump(self._methods, fout, indent=4)
+        self._db.close()
         return False
 
 
@@ -206,14 +214,23 @@ def main():
     subparsers = parser.add_subparsers(
         help='Available commands', dest='command')
 
+    subparsers.add_parser('init',
+                          formatter_class=CustomFormatter,
+                          help='Initialize environment')
+
     add_pser = subparsers.add_parser('add',
                                      formatter_class=CustomFormatter,
                                      help='Add a new repository')
     add_pser.add_argument(
-        '-m',
-        '--method',
-        default='rsync',
+        '-p',
+        '--program',
+        default='ustcsync',
         help='Sync method')
+    add_pser.add_argument(
+        '-a',
+        '--args',
+        default='',
+        help='Arguments passed to program')
     add_pser.add_argument(
         '-i',
         '--interval',
@@ -224,10 +241,6 @@ def main():
     sync_pser = subparsers.add_parser('sync',
                                       formatter_class=CustomFormatter,
                                       help='Start container to sync')
-    sync_pser.add_argument(
-        '-m',
-        '--method',
-        help='Sync method')
     sync_pser.add_argument('name')
 
     stop_pser = subparsers.add_parser('stop',
@@ -257,9 +270,16 @@ def main():
 
     with Manager(get('verbose')) as manager:
         if get('command') == 'add':
-            manager.add(get('method'), get('name'), get('interval'))
+            if get('program') == 'ustcsync':
+                if not get('args'):
+                    args = get('name')
+                else:
+                    args = get('args')
+            else:
+                args = get('args') or ''
+            manager.add(get('name'), get('program'), args, get('interval'))
         elif get('command') == 'sync':
-            manager.sync(get('name'), get('method'))
+            manager.sync(get('name'))
         elif get('command') == 'stop':
             manager.stop(get('name'), get('timeout'))
         elif get('command') == 'list':
