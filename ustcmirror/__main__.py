@@ -14,6 +14,10 @@ import shutil
 import tempfile
 import traceback
 import subprocess
+try:
+    from subprocess import DEVNULL
+except ImportError:
+    DEVNULL = open(os.devnull, 'wb')
 
 from .config import load_user_config
 _USER_CFG = load_user_config()
@@ -139,7 +143,7 @@ class Manager(object):
             self._log.debug('Command: %s', cmd)
         else:
             cmd = shlex.split('{} {}'.format(prog, args))
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(cmd, stdout=DEVNULL, stderr=DEVNULL)
 
     def stop(self, name, timeout=60):
 

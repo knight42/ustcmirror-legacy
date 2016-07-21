@@ -34,7 +34,7 @@ class DbDict(object):
     def __setitem__(self, name, v):
 
         sql = 'INSERT INTO {} (name, program, args) VALUES (?, ?, ?);'.format(self._table)
-        self._cursor.execute(sql, (name, *v))
+        self._cursor.execute(sql, (name, v[0], v[1]))
         self._conn.commit()
         DbDict._cache[name] = v
 
@@ -54,7 +54,6 @@ class DbDict(object):
                 yield item
         except:
             traceback.print_exc()
-            return None
 
     def close(self):
 
