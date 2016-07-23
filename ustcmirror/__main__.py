@@ -150,11 +150,18 @@ class Manager(object):
         debug = self._log.level == logging.DEBUG
 
         if prog == 'ustcsync':
-            uid = self._pw.pw_uid
-            gid = self._pw.pw_gid
-            ct = 'docker run --rm -v {conf}:/opt/ustcsync/etc:ro -v {repo}:/srv/repo/{name} -v {log}:/opt/ustcsync/log/{name} -e BIND_ADDRESS={bind_ip} -u {uid}:{gid} --name syncing-{name} --net=host ustclug/mirror:latest {args}'.format(
-                    name=name, conf=ETC_DIR, repo=repo, log=log, bind_ip=BIND_ADDR, uid=uid, gid=gid, args=args)
-            cmd = shlex.split(ct)
+            ct = {
+                'name': 'syncing-{}'.format(name),
+                'rm': False if debug else True,
+                'volumes': ['{}:/opt/ustcsync/etc:ro'.format(ETC_DIR), '{}:/opt/ustcsync/log/{}'.format(LOG_DIR, name.lower()), '{}:/srv/repo/{}'.format(repo, name)],
+                'user': '{}:{}'.format(self._pw.pw_uid, self._pw.pw_gid),
+                'image': 'ustclug/mirror:latest',
+                'args': args,
+                'env': 'BIND_ADDRESS={}'.format(BIND_ADDR),
+                'net': 'host',
+                'debug': debug
+            }
+            cmd = shlex.split(docker_run(**ct))
             self._log.debug('Command: %s', cmd)
         else:
             cmd = shlex.split('{} {}'.format(prog, args))
