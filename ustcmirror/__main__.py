@@ -1,6 +1,6 @@
 #!/usr/bin/python -O
 # -*- coding: utf-8 -*-
-from __future__ import print_function, unicode_literals, with_statement
+from __future__ import print_function, unicode_literals, with_statement, absolute_import
 
 import os
 import sys
@@ -19,7 +19,7 @@ try:
 except ImportError:
     DEVNULL = open(os.devnull, 'wb')
 
-from .config import load_user_config
+from .config import load_user_config, user_cfg_path
 _USER_CFG = load_user_config()
 BIN_PATH = _USER_CFG['BIN_PATH']
 SYNC_USR = _USER_CFG['SYNC_USR']
@@ -29,7 +29,8 @@ ETC_DIR = _USER_CFG['ETC_DIR']
 BIND_ADDR = _USER_CFG['BIND_ADDR']
 DB_PATH = _USER_CFG['DB_PATH']
 
-from .utils import DbDict
+from .utils import DbDict, docker_run
+
 
 class CustomFormatter(argparse.HelpFormatter):
 
@@ -59,12 +60,14 @@ class CustomFormatter(argparse.HelpFormatter):
                     help += ' (default: %(default)s)'
         return help
 
-if not hasattr(__builtins__, 'NotADirectoryError'):
+if not __builtins__.get('NotADirectoryError'):
     class NotADirectoryError(Exception):
         pass
 
+
 class UserNotFound(Exception):
     pass
+
 
 class MissingSyncMethod(Exception):
     pass
@@ -108,6 +111,7 @@ class Manager(object):
         try_mkdir(repo)
         try_mkdir(log)
 
+        # Insert into db
         self._db[name] = (prog, args)
 
         tab = subprocess.check_output(['crontab', '-l'])
@@ -115,7 +119,11 @@ class Manager(object):
         try:
             with os.fdopen(fd, 'wb') as tmp:
                 tmp.write(tab)
-                tmp.write('{} {} sync {name}\n'.format(interval, BIN_PATH, name=name).encode('utf-8'))
+                tmp.write(
+                    '{} {} sync {name}\n'.format(
+                        interval,
+                        BIN_PATH,
+                        name=name).encode('utf-8'))
             subprocess.check_call(['crontab', p])
         except:
             self._log.warn('Error occurred:')
@@ -125,6 +133,9 @@ class Manager(object):
 
     def sync(self, name):
 
+        if not BIND_ADDR:
+            raise ValueError('Invalid bind address')
+
         repo = path.join(REPO_DIR, name)
         if not path.isdir(repo):
             raise NotADirectoryError(repo)
@@ -132,7 +143,11 @@ class Manager(object):
         # Otherwise may be created by root
         try_mkdir(log)
 
+        if not self._db[name]:
+            raise KeyError(name)
         prog, args = self._db[name]
+
+        debug = self._log.level == logging.DEBUG
 
         if prog == 'ustcsync':
             uid = self._pw.pw_uid
@@ -143,7 +158,11 @@ class Manager(object):
             self._log.debug('Command: %s', cmd)
         else:
             cmd = shlex.split('{} {}'.format(prog, args))
-        subprocess.Popen(cmd, stdout=DEVNULL, stderr=DEVNULL)
+
+        if debug:
+            subprocess.call(cmd)
+        else:
+            subprocess.Popen(cmd, stdout=DEVNULL, stderr=DEVNULL)
 
     def stop(self, name, timeout=60):
 
@@ -158,14 +177,20 @@ class Manager(object):
 
         for item in self._db:
             name, prog, args = item
-            print(name, prog)
+            repo = path.join(REPO_DIR, name)
+            if path.isdir(repo):
+                print('Repository<{}>'.format(name), '{} {}'.format(prog, args))
+            else:
+                self._log.warn('Repository<%s> not exists', name)
 
     def remove(self, name):
 
         try:
-            shutil.rmtree(path.join(LOG_DIR, name))
+            shutil.rmtree(path.join(LOG_DIR, name.lower()))
         except:
             traceback.print_exc()
+
+        del self._db[name]
 
         tab = subprocess.check_output(['crontab', '-l']).decode('utf-8').splitlines()
         fd, p = tempfile.mkstemp()
@@ -217,10 +242,6 @@ def main():
 
     subparsers = parser.add_subparsers(
         help='Available commands', dest='command')
-
-    subparsers.add_parser('init',
-                          formatter_class=CustomFormatter,
-                          help='Initialize environment')
 
     add_pser = subparsers.add_parser('add',
                                      formatter_class=CustomFormatter,
