@@ -3,6 +3,8 @@
 ## $1: rsync|git|lftp|ftp
 ## $2: repo name
 
+[[ $DEBUG = [tT]rue ]] && set -x
+
 waitfor() {
     prog="$1"
     pid="$2"
@@ -26,11 +28,11 @@ export MIRRORNAME=${MIRRORNAME:-$(hostname -f)}
 
 case "$1" in
     rsync|git|lftp)
-        "$1"sync "$2" &
+        source "./$1"sync "$2" &
         waitfor "$1" $!
         ;;
     ftp)
-        ftpsync "sync:archive:$2" &
+        source ./ftpsync "sync:archive:$2" &
         waitfor "rsync" $!
         ;;
     *)
