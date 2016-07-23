@@ -75,8 +75,28 @@ class DbDict(object):
         self._conn.close()
 
 
-    d = DbDict(sqlite3.connect(f))
-    del d['apt.docker.abc']
+def docker_run(image, args, debug=False, rm=False,
+               detach=False, volumes=None, **kwargs):
+    cmd = 'docker run'
+    if debug:
+        cmd += ' -e DEBUG=true'
+    if rm and detach:
+        raise ValueError('Cannot specify --rm and -d at the same time')
+    if rm:
+        cmd += ' --rm'
+    if detach:
+        cmd += ' --d'
+    if volumes:
+        if not isinstance(volumes, list):
+            volumes = [volumes]
+        cmd += ' ' + ' '.join(map(lambda x: '-v {}'.format(x), volumes))
+    for k, v in kwargs.items():
+        if v is None:
+            cmd += ' --{}'.format(k)
+        else:
+            cmd += ' --{} {}'.format(k, v)
+    cmd += ' {} {}'.format(image, args)
+    return cmd
 
 if __name__ == '__main__':
     pass
