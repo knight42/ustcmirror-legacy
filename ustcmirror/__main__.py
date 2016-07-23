@@ -288,6 +288,25 @@ def main():
                           formatter_class=CustomFormatter,
                           help='List repositories')
 
+    cfg_pser = subparsers.add_parser('config',
+                                     formatter_class=CustomFormatter,
+                                     help='')
+
+    cfg_sub_pser = cfg_pser.add_subparsers(dest='config')
+    cfg_set = cfg_sub_pser.add_parser(
+        'set',
+        formatter_class=CustomFormatter,
+        help='Sets the config key to the value')
+    cfg_set.add_argument('key')
+    cfg_set.add_argument('value')
+    cfg_get = cfg_sub_pser.add_parser(
+        'get',
+        formatter_class=CustomFormatter,
+        help='Echo the config value to stdout')
+    cfg_get.add_argument('key')
+    cfg_sub_pser.add_parser('list', formatter_class=CustomFormatter,
+                            help='Show all the config settings')
+
     rm_pser = subparsers.add_parser('remove', help='Remove repository')
     rm_pser.add_argument('name')
 
@@ -295,10 +314,30 @@ def main():
         args = parser.parse_args()
     else:
         parser.print_help()
-        parser.exit(1)
+        parser.exit(0)
 
     args_dict = vars(args)
     get = args_dict.get
+
+    if get('command') == 'config':
+        if get('config') == 'get':
+            print(_USER_CFG.get(get('key')))
+        elif get('config') == 'list':
+            for k, v in _USER_CFG.items():
+                print(k, '=', v)
+        elif get('config') == 'set':
+            k = get('key')
+            if k not in _USER_CFG:
+                print('{} not exists!'.format(k))
+                sys.exit(1)
+            else:
+                import json
+                _USER_CFG[k] = get('value')
+                with open(user_cfg_path, 'w') as out:
+                    json.dump(_USER_CFG, out, indent=4)
+        else:
+            cfg_pser.print_help()
+        sys.exit(0)
 
     with Manager(get('verbose')) as manager:
         if get('command') == 'add':
