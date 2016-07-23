@@ -1,14 +1,14 @@
 #!/usr/bin/python -O
 # -*- coding: utf-8 -*-
-from __future__ import print_function, unicode_literals, with_statement
-__all__ = ['DbDict']
+from __future__ import print_function, unicode_literals, with_statement, generators
+__all__ = ['DbDict', 'docker_run']
 
-import sqlite3
 import traceback
+
 
 class DbDict(object):
 
-    ## Not thread-safe
+    # Not thread-safe
     _cache = {}
 
     def __init__(self, conn, table='repositories'):
@@ -55,16 +55,28 @@ class DbDict(object):
         except:
             traceback.print_exc()
 
+    def keys(self):
+
+        for item in self:
+            yield item[0]
+
+    def values(self):
+
+        for item in self:
+            yield item[1:]
+
+    def items(self):
+
+        for item in self:
+            yield (item[0], item[1:])
+
     def close(self):
 
         self._conn.close()
 
-if __name__ == '__main__':
-    from os import path
-    f = path.join(path.expanduser('~'), '.ustcmirror', 'repos.db')
 
     d = DbDict(sqlite3.connect(f))
     del d['apt.docker.abc']
 
-    for i in d:
-        print(i)
+if __name__ == '__main__':
+    pass
