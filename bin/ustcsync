@@ -12,7 +12,7 @@ waitfor() {
     wait "$pid"
 }
 
-export BASEDIR=${BASEDIR:-/opt/ustcsync/}
+export BASEDIR=${BASEDIR:-/opt/ustcsync}
 
 ## NAME and ARCHIVE will be override by `ftpsync`
 export ARCHIVE="${2,,}" # tolower
@@ -28,15 +28,14 @@ export MIRRORNAME=${MIRRORNAME:-$(hostname -f)}
 
 case "$1" in
     rsync|git|lftp)
-        source "./$1"sync "$2" &
+        ("$1"sync "$2") &
         waitfor "$1" $!
         ;;
     ftp)
-        source ./ftpsync "sync:archive:$2" &
+        (ftpsync "sync:archive:$2") &
         waitfor "rsync" $!
         ;;
     *)
         echo >&2 "Error: Unknown to me: $1 $2"
         ;;
 esac
-

@@ -153,7 +153,7 @@ class Manager(object):
             ct = {
                 'name': 'syncing-{}'.format(name),
                 'rm': False if debug else True,
-                'volumes': ['{}:/opt/ustcsync/etc:ro'.format(ETC_DIR), '{}:/opt/ustcsync/log/{}'.format(LOG_DIR, name.lower()), '{}:/srv/repo/{}'.format(repo, name)],
+                'volumes': ['{}:/opt/ustcsync/etc:ro'.format(ETC_DIR), '{}:/opt/ustcsync/log/{}'.format(log, name.lower()), '{}:/srv/repo/{}'.format(repo, name)],
                 'user': '{}:{}'.format(self._pw.pw_uid, self._pw.pw_gid),
                 'image': 'ustclug/mirror:latest',
                 'args': args,
