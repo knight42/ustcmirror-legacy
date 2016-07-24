@@ -1,2 +1,3 @@
-# docker-apt_dockerproject
-mirror of apt.dockerproject.org
+# README
+
+./bringup.sh /path/to/dockerproject [$USER]
