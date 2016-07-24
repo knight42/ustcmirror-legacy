@@ -34,7 +34,7 @@ trap 'rm -f $LOCK 2> /dev/null; savelog -qc $LOGROTATE $LOG' EXIT
 lftp -e "
 set net:socket-bind-ipv4 $BIND_ADDRESS
 open $LFTPHOST
-mirror --verbose -aec --parallel=$PARALLEL $EXCLUDE $LFTPPATH $TO
+mirror --verbose --skip-noaccess -aec --parallel=$PARALLEL $EXCLUDE $LFTPPATH $TO
 bye"
 RET=$?
 
