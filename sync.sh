@@ -11,9 +11,11 @@ LOCK="$TO/Archive-Update-in-Progress-$MIRRORNAME"
 OPTIONS="-X $LOCK --parallel=$NPROC -cev --skip-noaccess"
 
 touch "$LOCK"
-trap 'rm -f $LOCK &> /dev/null' EXIT
+trap 'rm -f $LOCK; savelog -qc 20 $LOGDIR/update.log' EXIT
 
 [[ -d $TO/multilib ]] || mkdir -p "$TO/multilib"
+
+date '+===== started at %s %F %T ====='
 
 lftp -e "
 set xfer:log true
@@ -24,4 +26,9 @@ mirror $OPTIONS ../fonts  $TO/
 mirror $OPTIONS ../multilib/x86_64 $TO/multilib/
 bye"
 
-savelog -qc 20 "$LOGDIR/update.log"
+if [ $? -eq 0 ]; then
+    date '+%F %T' > "$LOGDIR/.lastsuccess"
+    rm -f "$LOGDIR/.lastfail"
+else
+    date '+%F %T' > "$LOGDIR/.lastfail"
+fi
