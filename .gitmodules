@@ -1,6 +1,6 @@
 [submodule "plugins/dockerproject"]
 	path = plugins/dockerproject
 	url = https://github.com/ustcmirror/docker-apt_dockerproject
-[submodule "plugins/cratesmirror"]
-	path = plugins/cratesmirror
-	url = https://github.com/ustcmirror/lug-cratesmirror
+[submodule "plugins/infinality-bundle"]
+	path = plugins/infinality-bundle
+	url = https://github.com/ustcmirror/docker-infinality-bundle.git
