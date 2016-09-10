@@ -97,8 +97,14 @@ class Manager(object):
         ch.setFormatter(fmter)
         self._log.addHandler(ch)
 
+        if isinstance(SYNC_USR, int) or SYNC_USR.isdecimal():
+            user = int(SYNC_USR)
+            getpw = pwd.getpwuid
+        else:
+            user = SYNC_USR
+            getpw = pwd.getpwnam
         try:
-            self._pw = pwd.getpwnam(SYNC_USR)
+            self._pw = getpw(user)
         except KeyError:
             raise UserNotFound(SYNC_USR)
 
