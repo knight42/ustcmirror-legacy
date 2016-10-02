@@ -6,6 +6,8 @@
 
 exec > >(tee -a "$LOG") 2>&1
 
+[[ $DEBUG = [tT]rue  ]] && set -x
+
 if [ -f "$BASEDIR/etc/$NAME.conf" ]; then
     . "$BASEDIR/etc/$NAME.conf"
 else
@@ -37,9 +39,9 @@ RSYNC=${RSYNC:-rsync}
 RSYNC_BW=${RSYNC_BW:-0}
 RSYNC_MAXDELETE=${RSYNC_MAXDELETE:-4000}
 #BIND_ADDRESS=
-RSYNC_OPTIONS=${RSYNC_OPTIONS:-"-4PrltvHSB8192 --timeout 14400 --delay-updates --safe-links --delete-delay --delete-excluded"}
+RSYNC_OPTIONS=${RSYNC_OPTIONS:-"-4pPrltvHSB8192 --timeout 14400 --delay-updates --safe-links --delete-delay --delete-excluded"}
 RSYNC_OPTIONS="$RSYNC_OPTIONS $EXTRA_OPTIONS"
-EXCLUDE="$EXCLUDE --exclude .~tmp~/ --exclude Archive-Update-in-Progress-$MIRRORNAME"
+EXCLUDE+=" --exclude .~tmp~/ --exclude Archive-Update-in-Progress-$MIRRORNAME"
 
 touch "$LOCK"
 trap 'rm -f $LOCK 2> /dev/null; savelog -qc $LOGROTATE $LOG' EXIT
