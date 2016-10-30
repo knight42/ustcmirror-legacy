@@ -28,8 +28,9 @@ LOG_DIR = _USER_CFG['LOG_DIR']
 ETC_DIR = _USER_CFG['ETC_DIR']
 BIND_ADDR = _USER_CFG['BIND_ADDR']
 DB_PATH = _USER_CFG['DB_PATH']
+MAX_RUNNING = int(_USER_CFG['MAX_RUNNING'])
 
-from .utils import DbDict, docker_run
+from .utils import DbDict, docker_run, syncing_containers
 
 
 class CustomFormatter(argparse.HelpFormatter):
@@ -156,6 +157,9 @@ class Manager(object):
         debug = self._log.level == logging.DEBUG
 
         if prog == 'ustcsync':
+            if syncing_containers() > MAX_RUNNING:
+                self._log.debug('No more containers than {}'.format(MAX_RUNNING))
+                return
             ct = {
                 'name': 'syncing-{}'.format(name),
                 'rm': False if debug else True,
@@ -164,6 +168,7 @@ class Manager(object):
                 'image': 'ustclug/mirror:latest',
                 'args': args,
                 'env': 'BIND_ADDRESS={}'.format(BIND_ADDR),
+                'label': 'syncing',
                 'net': 'host',
                 'debug': debug
             }

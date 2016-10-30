@@ -40,6 +40,7 @@ def load_user_config():
         'SYNC_USR': 'mirror',
         # Only affect rsync/lftp/ftpsync
         'BIND_ADDR': 'eth0',
+        'MAX_RUNNING': 5,
     }
 
     if path.isfile(user_cfg_path):

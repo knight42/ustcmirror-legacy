@@ -1,9 +1,11 @@
 #!/usr/bin/python -O
 # -*- coding: utf-8 -*-
 from __future__ import print_function, unicode_literals, with_statement, generators
-__all__ = ['DbDict', 'docker_run']
+__all__ = ['DbDict', 'docker_run', 'syncing_containers']
 
 import traceback
+import subprocess
+from functools import reduce
 
 
 class DbDict(object):
@@ -77,7 +79,7 @@ class DbDict(object):
 
 def docker_run(image, args, debug=False, rm=False,
                detach=False, volumes=None, **kwargs):
-    cmd = 'docker run'
+    cmd = 'docker run --label=syncing'
     if debug:
         cmd += ' -e DEBUG=true'
     if rm and detach:
@@ -97,6 +99,15 @@ def docker_run(image, args, debug=False, rm=False,
             cmd += ' --{} {}'.format(k, v)
     cmd += ' {} {}'.format(image, args)
     return cmd
+
+def syncing_containers():
+    def count(prev, curr):
+        if len(curr) != 0:
+            return prev + 1
+        return prev
+    output = subprocess.check_output(['docker', 'ps', '-q', '-f', 'label=syncing']).split(b'\n')
+    return reduce(count, output, 0)
+
 
 if __name__ == '__main__':
     pass
