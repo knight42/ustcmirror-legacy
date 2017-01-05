@@ -1,3 +1,3 @@
 # README
 
-./bringup.sh /path/to/dockerproject [$USER]
+./bringup.sh /path/to/dockerproject /path/to/log
