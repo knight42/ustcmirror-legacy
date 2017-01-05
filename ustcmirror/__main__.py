@@ -143,13 +143,6 @@ class Manager(object):
         if not BIND_ADDR:
             raise ValueError('Invalid bind address')
 
-        repo = path.join(REPO_DIR, name)
-        if not path.isdir(repo):
-            raise NotADirectoryError(repo)
-        log = path.join(LOG_DIR, name.lower())
-        # Otherwise may be created by root
-        try_mkdir(log)
-
         if not self._db[name]:
             raise KeyError(name)
         prog, args = self._db[name]
@@ -157,6 +150,13 @@ class Manager(object):
         debug = self._log.level == logging.DEBUG
 
         if prog == 'ustcsync':
+            repo = path.join(REPO_DIR, name)
+            if not path.isdir(repo):
+                raise NotADirectoryError(repo)
+            log = path.join(LOG_DIR, name.lower())
+            # Otherwise may be created by root
+            try_mkdir(log)
+
             if syncing_containers() > MAX_RUNNING:
                 self._log.debug('No more containers than {}'.format(MAX_RUNNING))
                 return
